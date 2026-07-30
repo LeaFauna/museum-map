@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <!-- leaflet css -->
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossorigin=""/>
+        <link rel="stylesheet" href="css/MarkerCluster.css">
+        <link rel="stylesheet" href="css/MarkerCluster.Default.css">
+        <!-- leaflet js -->
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+        crossorigin=""></script>
+        <script src="js/leaflet.markercluster.js"></script>
+        <!-- d3 js -->
+        <script src = "https://d3js.org/d3.v4.min.js"></script>
+        <script src="https://d3js.org/d3-fetch.v1.min.js"></script>
+        <!-- website css -->
+        <link rel="stylesheet" href="styling.css" />
+    </head>
+
+    <body>
+        <div class="header">
+            <h1>Archaeological Finds in Cork</h1>
+        </div>
+        <div class = "layout">
+            <div id="map"></div>
+            <div id="side-panel">
+                <div class ="toggle-settings">
+                    <button id="connected-locations-btn">Hide Connections</button>
+                    <button id="zoom-out-btn">See Connected Locations</button>
+                    <section class="filter-section">
+                        <h3>Filters</h3>
+                        <label>
+                            Period:
+                            <select id="period-filter">
+                                <option value = "all">All</option>
+                            </select>
+                        </label>
+                        <label>
+                            Material:
+                            <select id="material-filter">
+                                <option value = "all">All</option>
+                            </select>
+                        </label>
+                    </section>
+                </div>
+                <div id="artifact-container">
+                    <h2>Select an object</h2>
+                    <p>Click a marker on the map.</p>
+                </div>
+            </div>            
+        </div>
+
+<script>
+            // GLOBAL VARIABLES
+            var map = L.map('map').setView(
+                [51.89682190400644, -8.473851743150139], 13);
+            //add osm layer
+            L.tileLayer(
+                'https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19, attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                }
+            ).addTo(map);
+            
+            // GLOBAL VARIABLES
+            const MapState = {
+                lines: [],
+                markers: [],
+                lineLayer: L.layerGroup(),
+                markerLayer: null,
+                connectedLayer: null,
+                selectedId: null
+            };
+
+            let showingConnections = true;
+
+            // HELPER FUNCTIONS
+            const makeLatLong = (lat, long) => `${lat}_${long}`;
+
+            function groupByLocation(data){
+                const coordMap = {};
+                data.forEach(row => {
+                    if (!row.site_lat || !row.site_long) return;
+                    const lat = parseFloat(row.site_lat);
+                    const long = parseFloat(row.site_long);
+                    const key = `${lat}, ${long}`;
+                    if (!coordMap[key]){
+                        coordMap[key] = {lat, long, objects: []};
+                    }
+                    coordMap[key].objects.push(row);
+                });
+                return Object.values(coordMap);
+            }
+
+            // RENDERING FUNCTIONS
+            function createObjectMarkers(data){
+                const markerCluster = L.markerClusterGroup();
+                const locations = groupByLocation(data);
+                locations.forEach(location => {
+                    console.log("Location object: ", location);
+                    const count = location.objects.length;
+                    const marker = L.circleMarker([location.lat, location.long], {
+                        radius: count > 15 ? 14 : count > 5 ? 12 : 10, // if ... else if ... else
+                        fillColor: "#145523",
+                        color: "#0f401b",
+                        weight: 1,
+                        opacity: 0.8,
+                        fillOpacity: 0.8,
+                    });
+                    // shared identity
+                    marker.siteId = makeLatLong(location.lat, location.long);
+                    marker.locationData = location;
+                    marker.on("click", function(){
+                        selectLocation(marker.siteId, location);
+                    });
+                    marker.bindTooltip(`
+                        <h3>${location.objects[0].excavation_site}</h3>
+                        <p>${count} objects found</p>
+                    `)
+
+                    markerCluster.addLayer(marker);
+                    MapState.markers.push(marker);
+                });
+                MapState.markerLayer = markerCluster;
+                return markerCluster;
+            }
+
+            function createLocationMarkers(data){
+               const markerGroup = L.layerGroup();
+                const seen = new Set();
+                
+                data.forEach(row => {
+                    if(!row.connected_lat || !row.connected_long) return;
+                    const lat = parseFloat(row.connected_lat);
+                    const long = parseFloat(row.connected_long);
+                    const key = `${lat}, ${long}`;
+                    
+                    if(seen.has(key)) return;
+                    seen.add(key);
+                    const marker = L.circleMarker(
+                        [lat, long], {
+                        radius: 10,
+                        fillColor: "#341e7e",
+                        color: "#231455",
+                        weight: 1,
+                        opacity: 0.8,
+                        fillOpacity: 0.8
+                    });
+                    marker.bindTooltip(`<h3>${row.connected_location}</h3>`)
+                    markerGroup.addLayer(marker);
+                 });
+                return markerGroup;
+            }
+
+            function createConnectionLines(data){
+                MapState.lines = [];
+                MapState.lineLayer.clearLayers();
+                data.forEach(row => {
+                    if (row.site_lat && row.site_long && row.connected_lat && row.connected_long){
+                        const line = L.polyline([
+                            [parseFloat(row.site_lat), parseFloat(row.site_long)], 
+                            [parseFloat(row.connected_lat), parseFloat(row.connected_long)]
+                        ],{
+                            color: "purple", weight: 2, opacity: 0.15
+                        });
+                        line.siteId = makeLatLong(row.site_lat, row.site_long);
+
+                        MapState.lines.push(line);
+                        MapState.lineLayer.addLayer(line);
+                    }
+                });
+                return MapState.lineLayer;
+            }
+
+            // UI FUNCTIONS
+            function selectLocation(siteId, location){
+                console.log("selectLocation called")
+                MapState.selectedId = siteId;
+                showInSidePanel(location);
+                //reset all lines
+                MapState.lines.forEach(line => {
+                    line.setStyle({opacity: 0.05, weight:2});
+                });
+                //highlight matching lines
+                MapState.lines.forEach(line => {
+                    if(line.siteId === siteId){
+                        line.setStyle({opacity: 0.9, weight:2});
+                    }
+                });
+                //highlight markers
+                MapState.markers.forEach(marker => {
+                    marker.setStyle({fillOpacity: marker.siteId === siteId ? 0.9 : 0.3});
+                });
+            }
+
+            // show content in side panel
+            function showInSidePanel(location){
+                console.log(location);
+                let html = `<h2>Excavation Site: ${location.objects[0].excavation_site}</h2>`;
+                location.objects.forEach(obj => {
+                    html += `
+                    <div class = "artifact-card">
+                        <div class = "artifact-info">
+                            <h3>${obj.object}</h3>
+                            <b>Material:</b> ${obj.material_category || "Unknown"}<br>
+                            <b>Origin:</b> ${obj.connected_location || "Unknown"}<br>
+                            <b>Period:</b> ${obj.period || "Unknown"}<br>
+                        </div>
+                        <div class = "artifact-img">
+                            <img src = "/museum/data/images/${obj.id}.jpg" alt = "${obj.Object}" onerror = "this.src='/museum/data/images/nan.jpg">
+                        </div>
+                    </div>
+                    `;
+                });
+                document.getElementById("artifact-container").innerHTML = html;
+            }
+
+            // FILTER SYSTEM LAYER            
+            function populatePeriodFilter(data){
+                const select = document.getElementById("period-filter");
+                const periods = new Set();
+                const periodOrder = [
+                    "Bronze Age",
+                    "Iron Age",
+                    "Norman / Medieval",
+                    "Post-Medieval / Early Modern",
+                    "Modern"
+                ];
+                const periodRank = {};
+                periodOrder.forEach((p, i) =>{
+                    periodRank[p] = i;
+                });
+                data.forEach(d=>{
+                    if(d.period_category){
+                        periods.add(d.period_category.trim());
+                    }
+                });
+                Array.from(periods).sort((a,b)=>{
+                    return(periodRank[a] ?? 999) - (periodRank[b] ?? 999);
+                }).forEach(period=>{
+                    const option = document.createElement("option");
+                    option.value = period;
+                    option.textContent = period;
+                    select.appendChild(option);
+                });
+            }
+
+            function populateMaterialFilter(data){
+                const select = document.getElementById("material-filter");
+                const materials = new Set();
+                data.forEach(d=>{
+                    if(d.material_category){
+                        materials.add(d.material_category.trim());
+                    }
+                });
+                //console.log("materials: ", materials)
+                Array.from(materials).sort().forEach(material=>{
+                    const option = document.createElement("option");
+                    option.value = material;
+                    option.textContent = material;
+                    select.appendChild(option);
+                });
+            }           
+
+            // EVENT LISTENERS
+            document.getElementById("period-filter").addEventListener("change", function(){
+                const selectedPeriod = this.value;
+                if (!allObjects.length) return;
+                map.removeLayer(objectLayer);
+                const filteredObjects = selectedPeriod
+                ? allObjects.filter(d=>
+                    d.period_category && d.period_category.trim() === selectedPeriod)
+                : allObjects;
+                objectLayer = createObjectMarkers(filteredObjects);
+
+                objectLayer.addTo(map)
+            });
+            document.getElementById("material-filter").addEventListener("change", function(){
+                const selectedMaterial = this.value;
+                if (!allObjects.length) return;
+                map.removeLayer(objectLayer);
+                const filteredObjects = selectedMaterial
+                ? allObjects.filter(d=>
+                    d.material_category && d.material_category.trim() === selectedMaterial)
+                : allObjects;
+                objectLayer = createObjectMarkers(filteredObjects);
+                objectLayer.addTo(map)
+            });
+           
+            // INITIALISE
+            d3.csv("/museum/data/dataset_objects.csv").then(data=>{
+                allObjects = data.filter(d => d.site_lat && d.site_long);
+                objectLayer = createObjectMarkers(allObjects);
+
+                const connectedLayer = L.layerGroup();
+                connectedLayer.addLayer(createLocationMarkers(allObjects));
+                connectedLayer.addLayer(createConnectionLines(allObjects));
+                
+                objectLayer.addTo(map);
+                connectedLayer.addTo(map);
+
+                populatePeriodFilter(allObjects);
+                populateMaterialFilter(allObjects);
+
+                document.getElementById("connected-locations-btn").addEventListener("click", function(){
+                    if (showingConnections){
+                        map.removeLayer(connectedLayer);
+                        showingConnections = false;
+                        this.textContent = "Show Connections";
+                    } else{
+                        map.addLayer(connectedLayer);
+                        showingConnections = true;
+                        this.textContent = "Hide Connections";
+                    }
+                })
+                document.getElementById("zoom-out-btn").addEventListener("click", function(){
+                    map.flyTo([50.08730606507962, -4.521471989861161], 4)
+                })
+            });
+        </script>
+  </body>
+</html>
+
