@@ -208,7 +208,7 @@
                             <b>Period:</b> ${obj.period || "Unknown"}<br>
                         </div>
                         <div class = "artifact-img">
-                            <img src = "/museum/data/images/${obj.id}.jpg" alt = "${obj.Object}" onerror = "this.src='/museum/data/images/nan.jpg">
+                            <img src = "images/${obj.id}.jpg" alt = "${obj.Object}" onerror = "this.src='images/nan.jpg">
                         </div>
                     </div>
                     `;
@@ -289,7 +289,7 @@
             });
            
             // INITIALISE
-            d3.csv("/museum/data/dataset_objects.csv").then(data=>{
+            d3.csv("dataset_objects.csv").then(data=>{
                 allObjects = data.filter(d => d.site_lat && d.site_long);
                 objectLayer = createObjectMarkers(allObjects);
 
