@@ -5,20 +5,16 @@
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossorigin=""/>
-        <link rel="stylesheet" href="css/MarkerCluster.css">
-        <link rel="stylesheet" href="css/MarkerCluster.Default.css">
         <!-- leaflet js -->
         <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
-        <script src="js/leaflet.markercluster.js"></script>
         <!-- d3 js -->
         <script src = "https://d3js.org/d3.v4.min.js"></script>
         <script src="https://d3js.org/d3-fetch.v1.min.js"></script>
         <!-- website css -->
         <link rel="stylesheet" href="styling.css" />
     </head>
-
     <body>
         <div class="header">
             <h1>Archaeological Finds in Cork</h1>
@@ -27,18 +23,21 @@
             <div id="map"></div>
             <div id="side-panel">
                 <div class ="toggle-settings">
-                    <button id="connected-locations-btn">Hide Connections</button>
-                    <button id="zoom-out-btn">See Connected Locations</button>
-                    <section class="filter-section">
-                        <h3>Filters</h3>
+                    <section class = "filter-zoom">
+                        <h3>Zoom Level</h3>
+                        <select id="view-select">
+                            <option value = "city">Cork City</option>
+                            <option value = "county">Cork County</option>
+                            <option value = "europe">Connected Locations</option>
+                        </select>
+                        <h3>Filter by period</h3>
                         <label>
-                            Period:
                             <select id="period-filter">
                                 <option value = "all">All</option>
                             </select>
                         </label>
                         <label>
-                            Material:
+                            <h3>Filter by Material</h3>
                             <select id="material-filter">
                                 <option value = "all">All</option>
                             </select>
@@ -49,13 +48,13 @@
                     <h2>Select an object</h2>
                     <p>Click a marker on the map.</p>
                 </div>
-            </div>            
+            </div>
         </div>
-
         <script>
             // GLOBAL VARIABLES
             var map = L.map('map').setView(
-                [51.89682190400644, -8.473851743150139], 13);
+                [51.89827214341589, -8.474338680952512], 15
+            );
             //add osm layer
             L.tileLayer(
                 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -71,6 +70,12 @@
                 markerLayer: null,
                 connectedLayer: null,
                 selectedId: null
+            };
+
+            const views = {
+                city: {center: [51.89827214341589, -8.474338680952512], zoom: 13},
+                county: {center: [52.07884036184116, -8.729119819600545],zoom: 8},
+                europe: {center: [50.08730606507962, -4.521471989861161],zoom: 4,}
             };
 
             let showingConnections = true;
@@ -95,7 +100,7 @@
 
             // RENDERING FUNCTIONS
             function createObjectMarkers(data){
-                const markerCluster = L.markerClusterGroup();
+                MapState.markerLayer = L.layerGroup();
                 const locations = groupByLocation(data);
                 locations.forEach(location => {
                     const count = location.objects.length;
@@ -118,11 +123,10 @@
                         <p>${count} objects found</p>
                     `)
 
-                    markerCluster.addLayer(marker);
+                    MapState.markerLayer.addLayer(marker);
                     MapState.markers.push(marker);
                 });
-                MapState.markerLayer = markerCluster;
-                return markerCluster;
+                return MapState.markerLayer;
             }
 
             function createLocationMarkers(data){
@@ -196,17 +200,18 @@
             function showInSidePanel(location){
                 let html = `<h2>Excavation Site: ${location.objects[0].excavation_site}</h2>`;
                 location.objects.forEach(obj => {
-                    console.log(obj);
+                    console.log(obj.id);
                     html += `
                     <div class = "artifact-card">
                         <div class = "artifact-info">
                             <h3>${obj.object}</h3>
                             <b>Material:</b> ${obj.material_category || "Unknown"}<br>
                             <b>Origin:</b> ${obj.connected_location || "Unknown"}<br>
-                            <b>Period:</b> ${obj.period || "Unknown"}<br>
+                            <b>Period:</b> ${obj.period_category || "Unknown"}<br>
+                            <b>Date:</b> ${obj.period || "Unknown"}<br>
                         </div>
                         <div class = "artifact-img">
-                            <img src = "images/${obj.id}.jpg" alt = "${obj.Object}" onerror = "this.src='images/nan.jpg">
+                            <img src = "/museum/data/images/${obj.id}.jpg" alt = "${obj.Object}" onerror = this.src="/museum/data/images/nan.jpg">
                         </div>
                     </div>
                     `;
@@ -214,7 +219,21 @@
                 document.getElementById("artifact-container").innerHTML = html;
             }
 
-            // FILTER SYSTEM LAYER            
+            // FILTER SYSTEM LAYER
+            function setView(type) {
+                switch (type) {
+                    case "city":
+                        map.flyTo(views.city.center, views.city.zoom);
+                        break;
+                    case "county":
+                        map.flyTo(views.county.center, views.county.zoom);
+                        break;
+                    case "europe":
+                        map.flyTo(views.europe.center, views.europe.zoom);
+                        break;
+                }
+            }
+            
             function populatePeriodFilter(data){
                 const select = document.getElementById("period-filter");
                 const periods = new Set();
@@ -260,33 +279,28 @@
                 });
             }           
 
-            // EVENT LISTENERS
-            document.getElementById("period-filter").addEventListener("change", function(){
-                const selectedPeriod = this.value;
+            function updateMapFilters(){
                 if (!allObjects.length) return;
-                map.removeLayer(objectLayer);
-                const filteredObjects = selectedPeriod
-                ? allObjects.filter(d=>
-                    d.period_category && d.period_category.trim() === selectedPeriod)
-                : allObjects;
-                objectLayer = createObjectMarkers(filteredObjects);
 
-                objectLayer.addTo(map)
-            });
-            document.getElementById("material-filter").addEventListener("change", function(){
-                const selectedMaterial = this.value;
-                if (!allObjects.length) return;
+                const selectedPeriod = document.getElementById("period-filter").value;
+                const selectedMaterial = document.getElementById("material-filter").value;
                 map.removeLayer(objectLayer);
-                const filteredObjects = selectedMaterial
-                ? allObjects.filter(d=>
-                    d.material_category && d.material_category.trim() === selectedMaterial)
-                : allObjects;
+                const filteredObjects = allObjects.filter(d =>{
+                    const periodMatch = selectedPeriod === "all" || (d.period_category && d.period_category.trim() === selectedPeriod);
+                    const materialMatch = selectedMaterial === "all" || (d.material_category && material_category.trim() === selectedMaterial);
+                    return periodMatch && materialMatch;
+                });
+
                 objectLayer = createObjectMarkers(filteredObjects);
-                objectLayer.addTo(map)
-            });
-           
+                objectLayer.addTo(map);
+            }
+            
+            // EVENT LISTENERS
+            document.getElementById("period-filter").addEventListener("change", updateMapFilters);
+            document.getElementById("material-filter").addEventListener("change", updateMapFilters);
+            
             // INITIALISE
-            d3.csv("dataset_objects.csv").then(data=>{
+            d3.csv("/museum/data/dataset_objects.csv").then(data=>{
                 allObjects = data.filter(d => d.site_lat && d.site_long);
                 objectLayer = createObjectMarkers(allObjects);
 
@@ -300,6 +314,9 @@
                 populatePeriodFilter(allObjects);
                 populateMaterialFilter(allObjects);
 
+                document.getElementById("view-select").addEventListener("change", function(){
+                    setView(this.value);
+                });
                 document.getElementById("connected-locations-btn").addEventListener("click", function(){
                     if (showingConnections){
                         map.removeLayer(connectedLayer);
@@ -311,11 +328,8 @@
                         this.textContent = "Hide Connections";
                     }
                 })
-                document.getElementById("zoom-out-btn").addEventListener("click", function(){
-                    map.flyTo([50.08730606507962, -4.521471989861161], 4)
-                })
             });
         </script>
-    </body>
+    
 </html>
 
