@@ -49,13 +49,13 @@ button {
 }
 
 #map {
-  width: 70%;
-  height: 500px;
+  width: 80%;
+  height: 600px;
 }
 
 #side-panel{
-  width: 30%;
-  height: 500px;
+  width: 20%;
+  height: 600px;
   overflow-y: auto;
   overflow-x: hidden;
   padding: 15px;
