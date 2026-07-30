@@ -52,7 +52,7 @@
             </div>            
         </div>
 
-<script>
+        <script>
             // GLOBAL VARIABLES
             var map = L.map('map').setView(
                 [51.89682190400644, -8.473851743150139], 13);
@@ -98,7 +98,6 @@
                 const markerCluster = L.markerClusterGroup();
                 const locations = groupByLocation(data);
                 locations.forEach(location => {
-                    console.log("Location object: ", location);
                     const count = location.objects.length;
                     const marker = L.circleMarker([location.lat, location.long], {
                         radius: count > 15 ? 14 : count > 5 ? 12 : 10, // if ... else if ... else
@@ -175,7 +174,6 @@
 
             // UI FUNCTIONS
             function selectLocation(siteId, location){
-                console.log("selectLocation called")
                 MapState.selectedId = siteId;
                 showInSidePanel(location);
                 //reset all lines
@@ -196,9 +194,9 @@
 
             // show content in side panel
             function showInSidePanel(location){
-                console.log(location);
                 let html = `<h2>Excavation Site: ${location.objects[0].excavation_site}</h2>`;
                 location.objects.forEach(obj => {
+                    console.log(obj);
                     html += `
                     <div class = "artifact-card">
                         <div class = "artifact-info">
@@ -254,7 +252,6 @@
                         materials.add(d.material_category.trim());
                     }
                 });
-                //console.log("materials: ", materials)
                 Array.from(materials).sort().forEach(material=>{
                     const option = document.createElement("option");
                     option.value = material;
@@ -319,6 +316,6 @@
                 })
             });
         </script>
-  </body>
+    </body>
 </html>
 
